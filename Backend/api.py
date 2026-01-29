@@ -1,27 +1,38 @@
-# backend/api.py
-
 from flask import Flask, request, jsonify
-from flask_cors import CORS 
 from bot_engine import responder, set_modo
 
 app = Flask(__name__)
-CORS(app)
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    data = request.get_json(force=True)
 
-    mensaje = data.get("mensaje", "")
-    modo = data.get("modo")  # opcional
+    try:
+        data = request.get_json(force=True, silent=True)
 
-    if modo:
-        set_modo(modo)
+        if not data:
+            return jsonify({"respuesta": "JSON inválido"}), 400
 
-    if not mensaje.strip():
-        return jsonify({"respuesta": "Mensaje vacío."}), 400
+        mensaje = data.get("mensaje", "")
 
-    respuesta = responder(mensaje)
-    return jsonify({"respuesta": respuesta})
+        # blindaje tipo
+        if not isinstance(mensaje, str):
+            mensaje = str(mensaje)
+
+        modo = data.get("modo")
+
+        if modo:
+            set_modo(modo)
+
+        if not mensaje.strip():
+            return jsonify({"respuesta": "Mensaje vacío"}), 400
+
+        respuesta = responder(mensaje)
+
+        return jsonify({"respuesta": respuesta})
+
+    except Exception as e:
+        return jsonify({"respuesta": f"Error servidor: {e}"}), 500
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)

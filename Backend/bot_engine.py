@@ -1,90 +1,101 @@
-# backend/bot_engine.py
-
 import os
-import google.generativeai as genai
+from pathlib import Path
 from dotenv import load_dotenv
+import google.generativeai as genai
 
-# Reducir ruido en consola
+# =========================
+# Silenciar logs molestos
+# =========================
 os.environ["GRPC_VERBOSITY"] = "ERROR"
 os.environ["GLOG_minloglevel"] = "2"
 
 # =========================
-# Configuración inicial
+# Cargar .env desde raíz
 # =========================
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(env_path)
 
-load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not API_KEY:
-    raise RuntimeError("No se encontró GEMINI_API_KEY en el archivo .env")
+    raise RuntimeError("No se encontró GEMINI_API_KEY en .env")
 
 genai.configure(api_key=API_KEY)
 
-# Modelo estable y rápido
+# =========================
+# Modelo
+# =========================
 model = genai.GenerativeModel("models/gemini-flash-latest")
-
-# Chat persistente (memoria)
 chat = model.start_chat(history=[])
 
 # =========================
-# Estado del bot
+# Estado de modo
 # =========================
-
-modo_respuesta = "normal"  # normal | estricto | explicativo
+modo_respuesta = "normal"
 
 # =========================
-# Utilidades internas
+# Modos de respuesta
 # =========================
-
 def construir_estilo():
     if modo_respuesta == "estricto":
-        return "Responde de forma concisa, técnica y directa."
-    elif modo_respuesta == "explicativo":
-        return "Explica paso a paso, con ejemplos claros."
-    return "Responde de forma clara y profesional."
+        return "Responde técnico, directo y breve."
+    
+    if modo_respuesta == "explicativo":
+        return "Explica paso a paso con ejemplos."
+
+    if modo_respuesta == "copiloto":
+        return """
+Actúa como copiloto programador senior.
+Analiza código.
+Corrige errores.
+Sugiere mejoras.
+Entrega código listo.
+Cierra con 'Siguiente paso recomendado'.
+"""
+
+    return "Responde claro y profesional."
 
 def set_modo(modo: str):
     global modo_respuesta
-    if modo in ["normal", "estricto", "explicativo"]:
+    if modo in ["normal", "estricto", "explicativo", "copiloto"]:
         modo_respuesta = modo
 
 # =========================
-# API pública del motor
+# Responder
 # =========================
-
 def responder(mensaje: str) -> str:
+
     texto = mensaje.strip().lower()
 
-    # Respuestas locales (NO usar LLM)
-    if texto in ["hola", "buenas", "hey", "hello"]:
+    # respuestas locales rápidas
+    if texto in ["hola", "hey", "buenas"]:
         return "Qué tal. Listo para programar. Dime qué necesitas."
 
     if texto in ["ayuda", "help"]:
         return (
             "Puedo ayudarte con:\n"
-            "- Explicaciones de programación\n"
-            "- Análisis de código\n"
-            "- Debugging\n"
-            "- Buenas prácticas\n\n"
-            "Escribe tu duda directamente."
+            "- revisar código\n"
+            "- explicar conceptos\n"
+            "- debug\n"
+            "- arquitectura\n"
+            "- mejoras\n"
         )
 
-    # === LLM ===
     estilo = construir_estilo()
 
     prompt = f"""
-Eres un asistente de programación experto.
+Eres un asistente experto en programación.
 {estilo}
 
-Mensaje del usuario:
+Mensaje:
 {mensaje}
 """
 
     try:
-        response = chat.send_message(prompt)
-        return response.text
+        r = chat.send_message(prompt)
+        return r.text
+
     except Exception as e:
         if "429" in str(e):
-            return "Error: demasiadas peticiones. Espera unos segundos."
-        return f"Error inesperado: {e}"
-
+            return "Error: demasiadas peticiones. Espera 30s."
+        return f"Error LLM: {e}"
